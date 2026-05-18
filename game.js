@@ -3,9 +3,18 @@ const scoreElement = document.querySelector("#scoreValue");
 const movesElement = document.querySelector("#movesValue");
 const statusElement = document.querySelector("#statusLine");
 const restartButton = document.querySelector("#restartButton");
+const effectsLayer = document.querySelector("#effectsLayer");
 
 const size = 8;
 const colors = ["red", "blue", "green", "yellow", "purple", "orange"];
+const colorValues = {
+  red: "#d84f5f",
+  blue: "#3d7fd8",
+  green: "#3fa76d",
+  yellow: "#e2b93b",
+  purple: "#9166d8",
+  orange: "#db7b3d",
+};
 const targetScore = 3000;
 const startingMoves = 30;
 
@@ -25,6 +34,13 @@ function tileAt(row, col) {
 
 function setStatus(text) {
   statusElement.textContent = text;
+  statusElement.classList.remove("combo");
+
+  if (text.includes("连锁") || text.includes("漂亮") || text.includes("目标")) {
+    window.requestAnimationFrame(() => {
+      statusElement.classList.add("combo");
+    });
+  }
 }
 
 function updateStats() {
@@ -68,6 +84,84 @@ function renderBoard(clearingKeys = new Set()) {
       button.addEventListener("click", () => handleTileClick(row, col));
       boardElement.append(button);
     }
+  }
+}
+
+function tileCenter(row, col) {
+  const tile = boardElement.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+  const layerRect = effectsLayer.getBoundingClientRect();
+  const tileRect = tile.getBoundingClientRect();
+
+  return {
+    x: tileRect.left - layerRect.left + tileRect.width / 2,
+    y: tileRect.top - layerRect.top + tileRect.height / 2,
+  };
+}
+
+function removeAfterAnimation(element) {
+  element.addEventListener("animationend", () => element.remove(), { once: true });
+}
+
+function createParticle(x, y, color, index) {
+  const particle = document.createElement("span");
+  const angle = (Math.PI * 2 * index) / 8 + Math.random() * 0.35;
+  const distance = 22 + Math.random() * 34;
+  const sizeValue = 5 + Math.random() * 7;
+
+  particle.className = "particle";
+  particle.style.setProperty("--x", `${x}px`);
+  particle.style.setProperty("--y", `${y}px`);
+  particle.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+  particle.style.setProperty("--dy", `${Math.sin(angle) * distance}px`);
+  particle.style.setProperty("--size", `${sizeValue}px`);
+  particle.style.setProperty("--color", color);
+  effectsLayer.append(particle);
+  removeAfterAnimation(particle);
+}
+
+function showScorePop(x, y, points) {
+  const scorePop = document.createElement("span");
+  scorePop.className = "score-pop";
+  scorePop.textContent = `+${points}`;
+  scorePop.style.setProperty("--x", `${x}px`);
+  scorePop.style.setProperty("--y", `${y}px`);
+  effectsLayer.append(scorePop);
+  removeAfterAnimation(scorePop);
+}
+
+function showComboBurst(chain) {
+  if (chain < 2) {
+    return;
+  }
+
+  const burst = document.createElement("span");
+  burst.className = "combo-burst";
+  burst.textContent = `Combo x${chain}`;
+  effectsLayer.append(burst);
+  removeAfterAnimation(burst);
+}
+
+function playClearEffects(matches, chain, points) {
+  let centerX = 0;
+  let centerY = 0;
+
+  for (const key of matches) {
+    const [row, col] = key.split(",").map(Number);
+    const { x, y } = tileCenter(row, col);
+    const color = colorValues[tileAt(row, col)];
+    centerX += x;
+    centerY += y;
+
+    for (let i = 0; i < 8; i += 1) {
+      createParticle(x, y, color, i);
+    }
+  }
+
+  showScorePop(centerX / matches.size, centerY / matches.size, points);
+  showComboBurst(chain);
+
+  if ("vibrate" in navigator) {
+    navigator.vibrate(chain > 1 ? [18, 35, 24] : 18);
   }
 }
 
@@ -154,11 +248,13 @@ async function resolveMatches() {
 
   while (matches.size > 0) {
     chain += 1;
-    score += matches.size * 100 * chain;
+    const points = matches.size * 100 * chain;
+    score += points;
     updateStats();
     renderBoard(matches);
+    playClearEffects(matches, chain, points);
     setStatus(chain > 1 ? `连锁 x${chain}！` : `消除了 ${matches.size} 个色块。`);
-    await wait(180);
+    await wait(260);
     collapseBoard(matches);
     renderBoard();
     await wait(120);
@@ -237,6 +333,7 @@ function restartGame() {
   moves = startingMoves;
   selected = null;
   locked = false;
+  effectsLayer.innerHTML = "";
   createBoard();
   updateStats();
   renderBoard();
